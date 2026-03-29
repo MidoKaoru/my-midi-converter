@@ -1,0 +1,9 @@
+body { font-family: sans-serif; text-align: center; background-color: #f4f7f6; padding: 30px 10px; margin: 0; }
+.container { max-width: 600px; margin: 0 auto; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); box-sizing: border-box; }
+h2 { font-size: 1.5em; color: #333; }
+p { font-size: 0.9em; color: #666; line-height: 1.5; }
+.drop-zone { border: 2px dashed #007bff; border-radius: 10px; padding: 40px 20px; cursor: pointer; color: #555; transition: background 0.3s; margin-bottom: 20px; background-color: #f9feff; }
+.drop-zone:hover, .drop-zone.dragover { background: #e9f5ff; border-color: #0056b3; }
+#status { margin-top: 20px; font-weight: bold; font-size: 1em; padding: 10px; border-radius: 5px; min-height: 1.2em; }
+/* スマホ向けに少しレイアウトを調整 */
+@media (max-width: 480px) { body { padding: 10px; } .container { padding: 15px; } .drop-zone { padding: 30px 10px; font-size: 0.9em; } }

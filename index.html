@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MIDI シャッフル解除ツール</title>
+    <link rel="stylesheet" href="css/style.css">
+    <script src="https://unpkg.com/@tonejs/midi"></script>
+    <link rel="icon" href="data:,">
+</head>
+<body>
+
+<div class="container">
+    <h2>MIDI シャッフル解除ツール</h2>
+    <p>シャッフルで入力された「.mid」ファイルを選んでください。<br>※ファイルはサーバーに送信されず、お使いの端末内でのみ安全に処理されます。</p>
+
+    <div style="margin-bottom: 20px; text-align: left; background: #f9f9f9; padding: 15px; border-radius: 8px;">
+        <strong style="display: block; margin-bottom: 10px; color: #333;">リズムの解釈:</strong>
+        <label style="margin-right: 15px; cursor: pointer;">
+            <input type="radio" name="shuffleType" value="regular" checked>
+            シャッフル (8分音符ベース)
+        </label>
+        <br>
+        <label style="cursor: pointer;">
+            <input type="radio" name="shuffleType" value="half">
+            ハーフタイム (16分音符ベース)
+        </label>
+    </div>
+    <div class="drop-zone" id="dropZone">
+        ここに .mid ファイルをドロップ<br>またはクリックして選択
+        <input type="file" id="fileInput" accept=".mid,.midi" style="display: none;">
+    </div>
+
+    <div id="status"></div>
+</div>
+
+<div style="margin-top: 30px; font-size: 0.8em; color: #888; border-top: 1px solid #eee; padding-top: 15px;"> 
+    <p>🔒 <b>プライバシーについて</b><br> このツールは完全にブラウザ内部で動作し、データが外部サーバーに送信・保存されることは一切ありません。</p> 
+</div>
+
+<script type="module" src="js/main.js"></script>
+
+</body>
+</html>
