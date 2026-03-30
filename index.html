@@ -14,6 +14,11 @@
     <h2>MIDI シャッフル解除ツール</h2>
     <p>シャッフルで入力された「.mid」ファイルを選んでください。<br>※ファイルはサーバーに送信されず、お使いの端末内でのみ安全に処理されます。</p>
 
+    <div style="margin-bottom: 20px; text-align: left; background: #fff8e1; padding: 15px; border-radius: 8px; border-left: 4px solid #ffc107; font-size: 0.9em; color: #444; line-height: 1.5;">
+        <strong style="color: #d35400; display: block; margin-bottom: 5px;">⚠️ 移調楽器に関する重要なお願い</strong>
+        サクソフォーンやトランペットなどの移調楽器を含むデータは、必ずお使いのソフト（DAW）で<strong>「実音（移調なし）」の状態にしてからMIDIエクスポート</strong>してください。<br>
+        移調されたまま書き出すと、MuseScore等に読み込んだ際に音程や調号が狂う原因となります。
+    </div>
     <div style="margin-bottom: 20px; text-align: left; background: #f9f9f9; padding: 15px; border-radius: 8px;">
         <strong style="display: block; margin-bottom: 10px; color: #333;">リズムの解釈:</strong>
         <label style="margin-right: 15px; cursor: pointer;">
@@ -26,6 +31,7 @@
             ハーフタイム (16分音符ベース)
         </label>
     </div>
+    
     <div class="drop-zone" id="dropZone">
         ここに .mid ファイルをドロップ<br>またはクリックして選択
         <input type="file" id="fileInput" accept=".mid,.midi" style="display: none;">
