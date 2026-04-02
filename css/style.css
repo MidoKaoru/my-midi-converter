@@ -7,3 +7,58 @@ p { font-size: 0.9em; color: #666; line-height: 1.5; }
 #status { margin-top: 20px; font-weight: bold; font-size: 1em; padding: 10px; border-radius: 5px; min-height: 1.2em; }
 /* スマホ向けに少しレイアウトを調整 */
 @media (max-width: 480px) { body { padding: 10px; } .container { padding: 15px; } .drop-zone { padding: 30px 10px; font-size: 0.9em; } }
+/* 既存のスタイルはそのまま残して、以下を追加 */
+
+.bulk-btn { 
+    padding: 4px 10px; 
+    cursor: pointer; 
+    background: #fff; 
+    border: 1px solid #ccc; 
+    border-radius: 4px; 
+    margin-left: 5px; 
+    font-size: 0.85em;
+}
+
+.bulk-btn:hover {
+    background: #e8f4f8;
+    border-color: #3498db;
+}
+
+.section-item {
+    background: white;
+    padding: 15px;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    font-size: 0.9em;
+    position: relative;
+}
+
+.section-item .remove-btn {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    padding: 3px 8px;
+    background: #e74c3c;
+    color: white;
+    border: none;
+    border-radius: 3px;
+    cursor: pointer;
+    font-size: 0.75em;
+}
+
+.section-item .remove-btn:hover {
+    background: #c0392b;
+}
+
+.section-item input[type="number"] {
+    width: 70px;
+    padding: 5px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    text-align: center;
+    margin: 0 3px;
+}
+
+.add-section-btn:hover {
+    background: #2980b9;
+}

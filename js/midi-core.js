@@ -1,19 +1,19 @@
 import { parseMidi, writeMidi } from 'https://esm.sh/midi-file';
 
-export async function processMidiData(file, shuffleType) {
+export async function processMidiData(file, defaultShuffleType, sections = []) {
     const arrayBuffer = await file.arrayBuffer();
     const originalUint8 = new Uint8Array(arrayBuffer);
 
     // ==========================================
-    // 【第1フェーズ：抽出】Track 0 からのみメタデータを抽出
+    // 【第1フェーズ：抽出】
     // ==========================================
     const originalParsed = parseMidi(originalUint8);
     const originalPPQ = originalParsed.header.ticksPerBeat;
+
     const savedMetaEvents = [];
-    
+
     if (originalParsed.tracks.length > 0) {
         let absoluteTick = 0;
-        // 重複を防ぐため、マスタートラック(0)からのみ調合・拍子・テンポを抽出
         originalParsed.tracks[0].forEach(event => {
             absoluteTick += event.deltaTime;
             if (event.type === 'keySignature' || event.type === 'timeSignature' || event.type === 'setTempo') {
@@ -23,63 +23,278 @@ export async function processMidiData(file, shuffleType) {
     }
 
     // ==========================================
-    // 【第2フェーズ：変換 (Tone.js)】ノートのみクオンタイズ
+    // 【第2フェーズ：変換】
     // ==========================================
     const midi = new window.Midi(arrayBuffer);
-    const PPQ = midi.header.ppq; 
-    const RES = (shuffleType === 'half') ? PPQ / 2 : PPQ;
-    const tolerance = RES * 0.08; 
+    const PPQ = midi.header.ppq;
 
-    function quantizeTick(tick) {
-        const beat = Math.floor(tick / RES);
-        let relTick = tick % RES;
-        if (relTick >= RES - tolerance) return (beat + 1) * RES;
-        if (relTick <= tolerance) return beat * RES;
-        const trip1 = Math.round(RES / 3);
-        const trip2 = Math.round(RES * 2 / 3);
-        const half  = Math.round(RES / 2);
-        if (Math.abs(relTick - trip1) <= tolerance || Math.abs(relTick - trip2) <= tolerance || Math.abs(relTick - half) <= tolerance) {
-            return beat * RES + half;
+    function getModeForMeasure(measureIndex) {
+        for (const sec of sections) {
+            if (measureIndex + 1 >= sec.start && measureIndex + 1 <= sec.end) {
+                return sec.mode;
+            }
         }
-        const subGrid = RES / 4; 
-        const snappedRelTick = Math.round(relTick / subGrid) * subGrid;
-        return beat * RES + snappedRelTick;
+        return defaultShuffleType;
     }
 
-    midi.tracks.forEach(track => {
-        const beats = {};
-        track.notes.forEach(note => {
-            const beatIndex = Math.floor(note.ticks / RES);
-            if (!beats[beatIndex]) beats[beatIndex] = [];
-            beats[beatIndex].push(note);
-        });
-
+    function detectTuplets(beats, RES, tolerance, mode, PPQ, measureGroups, mIdx) {
         const protectedBeats = new Set();
-        const trip1 = Math.round(RES / 3);
-        for (const beatIndex in beats) {
-            const positions = [];
-            beats[beatIndex].forEach(note => {
-                const relTick = note.ticks % RES;
-                if (!positions.some(p => Math.abs(p - relTick) <= tolerance)) positions.push(relTick);
+
+        if (mode === 'half') {
+            const quarterNote = PPQ;
+
+            const quarterBeats = {};
+            measureGroups[mIdx].forEach(note => {
+                const quarterBeatIndex = Math.floor(note.ticks / quarterNote);
+                if (!quarterBeats[quarterBeatIndex]) quarterBeats[quarterBeatIndex] = [];
+                quarterBeats[quarterBeatIndex].push(note);
             });
-            if (positions.some(p => Math.abs(p - trip1) <= tolerance) || positions.length >= 3) {
-                protectedBeats.add(parseInt(beatIndex));
+
+            for (const quarterBeatIndex in quarterBeats) {
+                const notes = quarterBeats[quarterBeatIndex];
+
+                const ornamentThreshold = Math.round(PPQ / 10);
+                const substantialNotes = notes.filter(note =>
+                    note.durationTicks > ornamentThreshold
+                );
+
+                if (substantialNotes.length >= 5) {
+                    notes.forEach(note => {
+                        const beatIndex = Math.floor(note.ticks / RES);
+                        protectedBeats.add(beatIndex);
+                    });
+                } else if (substantialNotes.length === 3) {
+                    const sorted = [...substantialNotes].sort((a, b) => a.ticks - b.ticks);
+                    const interval1 = sorted[1].ticks - sorted[0].ticks;
+                    const interval2 = sorted[2].ticks - sorted[1].ticks;
+                    const tripletInterval = Math.round(PPQ / 3);
+                    const tripletTolerance = Math.round(tripletInterval * 0.2);
+                    const isTriplet = Math.abs(interval1 - tripletInterval) <= tripletTolerance &&
+                                     Math.abs(interval2 - tripletInterval) <= tripletTolerance;
+                    if (isTriplet) {
+                        notes.forEach(note => {
+                            const beatIndex = Math.floor(note.ticks / RES);
+                            protectedBeats.add(beatIndex);
+                        });
+                    }
+                }
+            }
+
+        } else {
+            const tupletPatterns = {
+                triplet: [0, 1, 2].map(i => Math.round(RES * i / 3)),
+                quintuplet: [0, 1, 2, 3, 4].map(i => Math.round(RES * i / 5)),
+                septuplet: [0, 1, 2, 3, 4, 5, 6].map(i => Math.round(RES * i / 7))
+            };
+
+            for (const beatIndex in beats) {
+                const notes = beats[beatIndex];
+                const positions = [];
+
+                notes.forEach(note => {
+                    const relTick = note.ticks % RES;
+                    if (!positions.some(p => Math.abs(p - relTick) <= tolerance)) {
+                        positions.push(relTick);
+                    }
+                });
+
+                const nonGridPositions = positions.filter(pos => {
+                    const nearZero = Math.abs(pos) <= tolerance;
+                    const nearHalf = Math.abs(pos - RES / 2) <= tolerance;
+                    const nearFull = Math.abs(pos - RES) <= tolerance;
+                    return !nearZero && !nearHalf && !nearFull;
+                });
+
+                if (nonGridPositions.length < 2) continue;
+
+                for (const [name, pattern] of Object.entries(tupletPatterns)) {
+                    let matchCount = 0;
+
+                    for (const patternPos of pattern) {
+                        const isGridPos = (Math.abs(patternPos) <= tolerance) ||
+                                         (Math.abs(patternPos - RES / 2) <= tolerance) ||
+                                         (Math.abs(patternPos - RES) <= tolerance);
+
+                        if (isGridPos) continue;
+
+                        if (positions.some(pos => Math.abs(pos - patternPos) <= tolerance)) {
+                            matchCount++;
+                        }
+                    }
+
+                    const nonGridPatternPositions = pattern.filter(p => {
+                        return !(Math.abs(p) <= tolerance ||
+                                Math.abs(p - RES / 2) <= tolerance ||
+                                Math.abs(p - RES) <= tolerance);
+                    });
+
+                    const requiredMatches = Math.ceil(nonGridPatternPositions.length * 0.8);
+
+                    if (matchCount >= requiredMatches && matchCount >= 2) {
+                        protectedBeats.add(parseInt(beatIndex));
+                        break;
+                    }
+                }
             }
         }
 
+        return protectedBeats;
+    }
+
+    const tempoChangeTicks = savedMetaEvents
+        .filter(e => e.type === 'setTempo')
+        .map(e => e._abs);
+
+    const measureTickMap = [];
+
+    let beatsPerMeasure = 4;
+    let beatUnit = 4;
+
+    const firstTimeSig = savedMetaEvents.find(e => e.type === 'timeSignature');
+    if (firstTimeSig) {
+        beatsPerMeasure = firstTimeSig.numerator || 4;
+        beatUnit = firstTimeSig.denominator || 4;
+    } else {
+        console.warn('No Time Signature found, assuming 4/4');
+    }
+
+    const ticksPerMeasure = PPQ * (beatsPerMeasure * 4 / beatUnit);
+
+    if (midi.tracks.length > 0) {
+        const allNotes = midi.tracks.flatMap(t => t.notes);
+        if (allNotes.length === 0) {
+            throw new Error('MIDIファイルに音符が見つかりません');
+        }
+
+        const maxTick = Math.max(...allNotes.map(n => n.ticks + n.durationTicks), 0);
+        const totalMeasures = Math.ceil(maxTick / ticksPerMeasure);
+
+        for (let m = 0; m < totalMeasures; m++) {
+            const mode = getModeForMeasure(m);
+            measureTickMap.push({
+                measureIndex: m,
+                startTick: m * ticksPerMeasure,
+                endTick: (m + 1) * ticksPerMeasure,
+                mode: mode
+            });
+        }
+    }
+
+    midi.tracks.forEach((track) => {
+        const measureGroups = {};
         track.notes.forEach(note => {
-            const beatIndex = Math.floor(note.ticks / RES);
-            if (protectedBeats.has(beatIndex)) return; 
-            const newStartTick = quantizeTick(note.ticks);
-            const newEndTick = quantizeTick(note.ticks + note.durationTicks);
-            note.ticks = newStartTick;
-            const rawDuration = newEndTick - newStartTick;
-            const durationGrid = PPQ / 4; 
-            note.durationTicks = Math.max(durationGrid, Math.round(rawDuration / durationGrid) * durationGrid); 
+            const measure = measureTickMap.find(m =>
+                note.ticks >= m.startTick && note.ticks < m.endTick
+            );
+            if (measure) {
+                const mIdx = measure.measureIndex;
+                if (!measureGroups[mIdx]) measureGroups[mIdx] = [];
+                measureGroups[mIdx].push(note);
+            } else {
+                console.warn(`Note at tick ${note.ticks} has no measure assigned.`);
+            }
         });
+
+        for (const mIdx in measureGroups) {
+            const measure = measureTickMap[parseInt(mIdx)];
+            if (!measure) {
+                console.error(`Measure ${mIdx} not found in map.`);
+                continue;
+            }
+
+            const mode = measure.mode;
+            const RES = (mode === 'half') ? PPQ / 2 : PPQ;
+            const tolerance = RES * 0.08;
+
+            function quantizeTick(tick, duration) {
+                const beat = Math.floor(tick / RES);
+                let relTick = tick % RES;
+                const tripletSixteenthDuration = Math.round(PPQ / 6);
+
+                if (duration >= tripletSixteenthDuration) {
+                    if (relTick <= tolerance) return beat * RES;
+
+                    const half = RES / 2;
+                    if (Math.abs(relTick - half) <= tolerance * 2) return beat * RES + half;
+
+                    const zone1End = RES / 3;
+                    const zone2End = RES * 2 / 3;
+
+                    if (relTick < zone1End) return beat * RES;
+                    else if (relTick < zone2End) return beat * RES + RES / 2;
+                    else return beat * RES + RES / 2;
+                }
+
+                if (relTick >= RES - tolerance) return (beat + 1) * RES;
+                if (relTick <= tolerance) return beat * RES;
+
+                const subGrid = RES / 4;
+                const snappedRelTick = Math.round(relTick / subGrid) * subGrid;
+                return beat * RES + snappedRelTick;
+            }
+
+            const beats = {};
+            measureGroups[mIdx].forEach(note => {
+                const beatIndex = Math.floor(note.ticks / RES);
+                if (!beats[beatIndex]) beats[beatIndex] = [];
+                beats[beatIndex].push(note);
+            });
+
+            const protectedBeats = detectTuplets(beats, RES, tolerance, mode, PPQ, measureGroups, mIdx);
+
+            measureGroups[mIdx].forEach(note => {
+                const beatIndex = Math.floor(note.ticks / RES);
+                const isNearTempoChange = tempoChangeTicks
+                    .filter(t => t > 0)
+                    .some(tick => Math.abs(note.ticks - tick) <= tolerance);
+
+                if (protectedBeats.has(beatIndex) || isNearTempoChange) {
+                    if (isNearTempoChange) {
+                        const eighthNoteDuration = PPQ / 2;
+                        const tripletSixteenthDuration = Math.round(PPQ / 6);
+                        const minGrid = PPQ / 16;
+                        if (note.durationTicks >= tripletSixteenthDuration) {
+                            note.durationTicks = eighthNoteDuration;
+                        } else {
+                            note.durationTicks = Math.round(note.durationTicks / minGrid) * minGrid;
+                        }
+                    }
+                    return;
+                }
+
+                const newStartTick = quantizeTick(note.ticks, note.durationTicks);
+
+                let newEndTick;
+                const eighthNoteDuration = PPQ / 2;
+                const sixteenthNoteDuration = PPQ / 4;
+                const tripletSixteenthDuration = Math.round(PPQ / 6);
+
+                if (mode === 'regular') {
+                    if (note.durationTicks >= tripletSixteenthDuration) {
+                        newEndTick = newStartTick + eighthNoteDuration;
+                    } else {
+                        const minGrid = PPQ / 16;
+                        const adjustedDur = Math.round(note.durationTicks / minGrid) * minGrid;
+                        newEndTick = newStartTick + adjustedDur;
+                    }
+                } else {
+                    if (note.durationTicks >= eighthNoteDuration * 0.75) {
+                        newEndTick = newStartTick + eighthNoteDuration;
+                    } else if (note.durationTicks >= tripletSixteenthDuration) {
+                        newEndTick = newStartTick + sixteenthNoteDuration;
+                    } else {
+                        const minGrid = PPQ / 16;
+                        const adjustedDur = Math.round(note.durationTicks / minGrid) * minGrid;
+                        newEndTick = newStartTick + adjustedDur;
+                    }
+                }
+
+                note.ticks = newStartTick;
+                note.durationTicks = newEndTick - newStartTick;
+            });
+        }
     });
 
-    // Tone.js側のメタデータを念のため削除
     midi.header.keySignatures = [];
     midi.header.tempos = [];
     midi.header.timeSignatures = [];
@@ -90,13 +305,12 @@ export async function processMidiData(file, shuffleType) {
     const toneExportedUint8 = midi.toArray();
 
     // ==========================================
-    // 【第3フェーズ：修復と統合】数学的に正確な位置へパッチ当て
+    // 【第3フェーズ：修復と統合】
     // ==========================================
     const finalParsed = parseMidi(toneExportedUint8);
     const exportPPQ = finalParsed.header.ticksPerBeat;
     const scale = exportPPQ / originalPPQ;
 
-    // メタイベントの位置を、新しいPPQスケールに合わせて再計算
     const processedMetaEvents = savedMetaEvents.map(event => ({
         ...event,
         _abs: Math.round(event._abs * scale)
@@ -108,39 +322,30 @@ export async function processMidiData(file, shuffleType) {
         let time2 = 0;
         const abs2 = track2.map(e => { time2 += e.deltaTime; return { ...e, _abs: time2 }; });
 
-        // Tone.jsが残した可能性のある不要なメタイベントを排除
         const isAllowed = (e) => e.type !== 'timeSignature' && e.type !== 'keySignature' && e.type !== 'setTempo' && e.type !== 'endOfTrack';
         const filtered1 = abs1.filter(isAllowed);
         const filtered2 = abs2.filter(isAllowed);
 
-        // 抽出した正確なメタイベントと統合してソート
         const merged = [...filtered1, ...filtered2, ...metaEvents].sort((a, b) => {
             if (a._abs !== b._abs) return a._abs - b._abs;
-            // 同時刻の場合は、メタイベント(拍子や調合など)をノート(音符)より前に置く
             const aIsNote = ('channel' in a) ? 1 : 0;
             const bIsNote = ('channel' in b) ? 1 : 0;
-            return aIsNote - bIsNote; 
+            return aIsNote - bIsNote;
         });
 
-        // 最後に End of Track を付与
         const maxTime = merged.length > 0 ? merged[merged.length - 1]._abs : 0;
         merged.push({ type: 'endOfTrack', deltaTime: 0, _abs: maxTime });
 
-        // 絶対時間から再び deltaTime へ変換
         let current = 0;
         return merged.map(e => {
             const dt = Math.max(0, Math.round(e._abs - current));
             current = e._abs;
-            
-            // ★致命的なバグの修正箇所：計算したdtをしっかりと代入する
-            const newEv = { ...e, deltaTime: dt }; 
-            
+            const newEv = { ...e, deltaTime: dt };
             delete newEv._abs;
             return newEv;
         });
     }
 
-    // マスタートラック(0)と楽器トラック(1)をマージ
     if (finalParsed.tracks.length >= 2) {
         finalParsed.tracks[0] = mergeTracks(finalParsed.tracks[0], finalParsed.tracks[1], processedMetaEvents);
         finalParsed.tracks.splice(1, 1);

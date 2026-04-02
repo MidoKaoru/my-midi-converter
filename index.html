@@ -19,17 +19,40 @@
         サクソフォーンやトランペットなどの移調楽器を含むデータは、必ずお使いのソフト（DAW）で<strong>「実音（移調なし）」の状態にしてからMIDIエクスポート</strong>してください。<br>
         移調されたまま書き出すと、MuseScore等に読み込んだ際に音程や調号が狂う原因となります。
     </div>
-    <div style="margin-bottom: 20px; text-align: left; background: #f9f9f9; padding: 15px; border-radius: 8px;">
-        <strong style="display: block; margin-bottom: 10px; color: #333;">リズムの解釈:</strong>
-        <label style="margin-right: 15px; cursor: pointer;">
-            <input type="radio" name="shuffleType" value="regular" checked>
-            シャッフル (8分音符ベース)
-        </label>
-        <br>
-        <label style="cursor: pointer;">
-            <input type="radio" name="shuffleType" value="half">
-            ハーフタイム (16分音符ベース)
-        </label>
+
+    <!-- ★★★ 追加：セクション別設定パネル ★★★ -->
+    <div style="margin-bottom: 20px; text-align: left; background: #f9f9f9; padding: 20px; border-radius: 8px; border: 1px solid #ddd;">
+        <div style="font-weight: bold; margin-bottom: 15px; color: #333; border-left: 4px solid #3498db; padding-left: 10px; display: flex; justify-content: space-between; align-items: center;">
+            リズム処理の設定
+            <div style="font-size: 0.8em; font-weight: normal;">
+                一括設定：
+                <button class="bulk-btn" onclick="MidiApp.setAllSections('regular')">すべて8分</button>
+                <button class="bulk-btn" onclick="MidiApp.setAllSections('half')">すべて16分</button>
+            </div>
+        </div>
+
+        <div style="background: #e8f4f8; padding: 12px; border-radius: 6px; margin-bottom: 15px; font-size: 0.9em;">
+            <strong>📍 デフォルト設定（全体）</strong><br>
+            <label style="display: block; margin-bottom: 6px; cursor: pointer;">
+                <input type="radio" name="defaultShuffleType" value="regular" checked>
+                8分音符ベース（通常のシャッフル）
+            </label>
+            <label style="display: block; cursor: pointer;">
+                <input type="radio" name="defaultShuffleType" value="half">
+                16分音符ベース（ハーフタイムシャッフル）
+            </label>
+            <p style="font-size: 0.85em; color: #555; margin: 8px 0 0 0;">
+                ※ 下で範囲指定しない限り、この設定が全体に適用されます。
+            </p>
+        </div>
+
+        <div id="sectionContainer" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px;">
+            <!-- セクション設定がここに動的追加される -->
+        </div>
+
+        <button class="add-section-btn" onclick="MidiApp.addSection()" style="padding: 8px 15px; background: #3498db; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 0.9em; margin-top: 10px;">
+            ＋ セクションを追加
+        </button>
     </div>
     
     <div class="drop-zone" id="dropZone">

@@ -1,0 +1,6 @@
+{
+  "name": "local-server",
+  "scripts": {
+    "start": "npx http-server -c-1"
+  }
+}
