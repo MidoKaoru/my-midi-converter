@@ -249,16 +249,6 @@ export async function processMidiData(file, defaultShuffleType, sections = []) {
                     .some(tick => Math.abs(note.ticks - tick) <= tolerance);
 
                 if (protectedBeats.has(beatIndex) || isNearTempoChange) {
-                    if (isNearTempoChange) {
-                        const eighthNoteDuration = PPQ / 2;
-                        const tripletSixteenthDuration = Math.round(PPQ / 6);
-                        const minGrid = PPQ / 16;
-                        if (note.durationTicks >= tripletSixteenthDuration) {
-                            note.durationTicks = eighthNoteDuration;
-                        } else {
-                            note.durationTicks = Math.round(note.durationTicks / minGrid) * minGrid;
-                        }
-                    }
                     return;
                 }
 
@@ -271,7 +261,12 @@ export async function processMidiData(file, defaultShuffleType, sections = []) {
 
                 if (mode === 'regular') {
                     if (note.durationTicks >= tripletSixteenthDuration) {
-                        newEndTick = newStartTick + eighthNoteDuration;
+                        // 標準音価リストへの最近接スナップ（4小節分まで対応）
+                        const standardDurations = [240, 480, 720, 960, 1440, 1920, 2880, 3840, 5760, 7680];
+                        const snapped = standardDurations.reduce((nearest, val) =>
+                            Math.abs(val - note.durationTicks) <= Math.abs(nearest - note.durationTicks) ? val : nearest
+                        );
+                        newEndTick = newStartTick + snapped;
                     } else {
                         const minGrid = PPQ / 16;
                         const adjustedDur = Math.round(note.durationTicks / minGrid) * minGrid;
