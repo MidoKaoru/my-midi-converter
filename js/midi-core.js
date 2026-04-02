@@ -261,12 +261,9 @@ export async function processMidiData(file, defaultShuffleType, sections = []) {
 
                 if (mode === 'regular') {
                     if (note.durationTicks >= tripletSixteenthDuration) {
-                        // 標準音価リストへの最近接スナップ（4小節分まで対応）
-                        const standardDurations = [240, 480, 720, 960, 1440, 1920, 2880, 3840, 5760, 7680];
-                        const snapped = standardDurations.reduce((nearest, val) =>
-                            Math.abs(val - note.durationTicks) <= Math.abs(nearest - note.durationTicks) ? val : nearest
-                        );
-                        newEndTick = newStartTick + snapped;
+                        // 8分音符（240 ticks）を基本単位として最も近い倍数に丸める
+                        const multiplier = Math.max(1, Math.round(note.durationTicks / eighthNoteDuration));
+                        newEndTick = newStartTick + multiplier * eighthNoteDuration;
                     } else {
                         const minGrid = PPQ / 16;
                         const adjustedDur = Math.round(note.durationTicks / minGrid) * minGrid;
