@@ -51,10 +51,11 @@ export async function processMidiData(file, defaultShuffleType, sections = []) {
                 quarterBeats[quarterBeatIndex].push(note);
             });
 
+            const ornamentThreshold = Math.round(PPQ / 10);
+
             for (const quarterBeatIndex in quarterBeats) {
                 const notes = quarterBeats[quarterBeatIndex];
 
-                const ornamentThreshold = Math.round(PPQ / 10);
                 const substantialNotes = notes.filter(note =>
                     note.durationTicks > ornamentThreshold
                 );
@@ -70,6 +71,38 @@ export async function processMidiData(file, defaultShuffleType, sections = []) {
                     const interval1 = sorted[1].ticks - sorted[0].ticks;
                     const interval2 = sorted[2].ticks - sorted[1].ticks;
                     const tripletInterval = Math.round(PPQ / 3);
+                    const tripletTolerance = Math.round(tripletInterval * 0.2);
+                    const isTriplet = Math.abs(interval1 - tripletInterval) <= tripletTolerance &&
+                                     Math.abs(interval2 - tripletInterval) <= tripletTolerance;
+                    if (isTriplet) {
+                        notes.forEach(note => {
+                            const beatIndex = Math.floor(note.ticks / RES);
+                            protectedBeats.add(beatIndex);
+                        });
+                    }
+                }
+            }
+
+            // 半拍（PPQ/2）単位での3連符検出
+            const halfBeatNote = PPQ / 2;
+            const halfBeats = {};
+            measureGroups[mIdx].forEach(note => {
+                const halfBeatIndex = Math.floor(note.ticks / halfBeatNote);
+                if (!halfBeats[halfBeatIndex]) halfBeats[halfBeatIndex] = [];
+                halfBeats[halfBeatIndex].push(note);
+            });
+
+            for (const halfBeatIndex in halfBeats) {
+                const notes = halfBeats[halfBeatIndex];
+                const substantialNotes = notes.filter(note =>
+                    note.durationTicks > ornamentThreshold
+                );
+
+                if (substantialNotes.length === 3) {
+                    const sorted = [...substantialNotes].sort((a, b) => a.ticks - b.ticks);
+                    const interval1 = sorted[1].ticks - sorted[0].ticks;
+                    const interval2 = sorted[2].ticks - sorted[1].ticks;
+                    const tripletInterval = Math.round(PPQ / 6);
                     const tripletTolerance = Math.round(tripletInterval * 0.2);
                     const isTriplet = Math.abs(interval1 - tripletInterval) <= tripletTolerance &&
                                      Math.abs(interval2 - tripletInterval) <= tripletTolerance;
