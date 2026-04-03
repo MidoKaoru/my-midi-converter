@@ -83,6 +83,7 @@ export async function processMidiData(file, defaultShuffleType, sections = []) {
             }
 
         } else {
+            const ornamentThreshold = Math.round(PPQ / 10);
             const tupletPatterns = {
                 triplet:    [0, 1, 2].map(i => Math.round(RES * i / 3)),
                 quintuplet: [0, 1, 2, 3, 4].map(i => Math.round(RES * i / 5)),
@@ -94,6 +95,7 @@ export async function processMidiData(file, defaultShuffleType, sections = []) {
                 const positions = [];
 
                 notes.forEach(note => {
+                    if (note.durationTicks <= ornamentThreshold) return;
                     const relTick = note.ticks % RES;
                     if (!positions.some(p => Math.abs(p - relTick) <= tolerance)) {
                         positions.push(relTick);
@@ -223,6 +225,7 @@ export async function processMidiData(file, defaultShuffleType, sections = []) {
             const mode = measure.mode;
             const RES = (mode === 'half') ? PPQ / 2 : PPQ;
             const tolerance = RES * 0.08;
+            const ornamentThreshold = Math.round(PPQ / 10);
 
             function quantizeTick(tick, duration) {
                 const beat = Math.floor(tick / RES);
@@ -270,7 +273,7 @@ export async function processMidiData(file, defaultShuffleType, sections = []) {
                     .filter(t => t > 0)
                     .some(tick => Math.abs(note.ticks - tick) <= tolerance);
 
-                if (protectedBeats.has(beatIndex) || isNearTempoChange) {
+                if (note.durationTicks <= ornamentThreshold || protectedBeats.has(beatIndex) || isNearTempoChange) {
                     return;
                 }
 
