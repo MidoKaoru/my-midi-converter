@@ -1,6 +1,7 @@
 import { parseMidi, writeMidi } from 'https://esm.sh/midi-file';
 
 export async function processMidiData(file, defaultShuffleType, sections = []) {
+
     const arrayBuffer = await file.arrayBuffer();
     const originalUint8 = new Uint8Array(arrayBuffer);
 
@@ -258,11 +259,10 @@ export async function processMidiData(file, defaultShuffleType, sections = []) {
                 const eighthNoteDuration = PPQ / 2;
                 const sixteenthNoteDuration = PPQ / 4;
                 const tripletSixteenthDuration = Math.round(PPQ / 6);
-                const tripletThirtySecondDuration = Math.round(PPQ / 12); // 16分音符ベース用の閾値として追加
 
                 if (mode === 'regular') {
                     if (note.durationTicks >= tripletSixteenthDuration) {
-                        // 8分音符を基本単位として最も近い倍数に丸める
+                        // 8分音符（240 ticks）を基本単位として最も近い倍数に丸める
                         const multiplier = Math.max(1, Math.round(note.durationTicks / eighthNoteDuration));
                         newEndTick = newStartTick + multiplier * eighthNoteDuration;
                     } else {
@@ -271,12 +271,12 @@ export async function processMidiData(file, defaultShuffleType, sections = []) {
                         newEndTick = newStartTick + adjustedDur;
                     }
                 } else {
-                    if (note.durationTicks >= tripletThirtySecondDuration) {
-                        // 16分音符を基本単位として最も近い倍数に丸める
+                    // 16分音符（120 ticks）を基本単位として最も近い倍数に丸める
+                    if (note.durationTicks >= tripletSixteenthDuration) {
                         const multiplier = Math.max(1, Math.round(note.durationTicks / sixteenthNoteDuration));
                         newEndTick = newStartTick + multiplier * sixteenthNoteDuration;
                     } else {
-                        const minGrid = PPQ / 32;
+                        const minGrid = PPQ / 16;
                         const adjustedDur = Math.round(note.durationTicks / minGrid) * minGrid;
                         newEndTick = newStartTick + adjustedDur;
                     }
