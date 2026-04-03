@@ -148,18 +148,13 @@ export async function processMidiData(file, defaultShuffleType, sections = []) {
 
     const measureTickMap = [];
 
-    let beatsPerMeasure = 4;
-    let beatUnit = 4;
+    const timeSigEvents = savedMetaEvents
+        .filter(e => e.type === 'timeSignature')
+        .sort((a, b) => a._abs - b._abs);
 
-    const firstTimeSig = savedMetaEvents.find(e => e.type === 'timeSignature');
-    if (firstTimeSig) {
-        beatsPerMeasure = firstTimeSig.numerator || 4;
-        beatUnit = firstTimeSig.denominator || 4;
-    } else {
+    if (timeSigEvents.length === 0) {
         console.warn('No Time Signature found, assuming 4/4');
     }
-
-    const ticksPerMeasure = PPQ * (beatsPerMeasure * 4 / beatUnit);
 
     if (midi.tracks.length > 0) {
         const allNotes = midi.tracks.flatMap(t => t.notes);
@@ -168,16 +163,40 @@ export async function processMidiData(file, defaultShuffleType, sections = []) {
         }
 
         const maxTick = Math.max(...allNotes.map(n => n.ticks + n.durationTicks), 0);
-        const totalMeasures = Math.ceil(maxTick / ticksPerMeasure);
 
-        for (let m = 0; m < totalMeasures; m++) {
-            const mode = getModeForMeasure(m);
+        let currentTick = 0;
+        let measureIndex = 0;
+        let currentBeatsPerMeasure = 4;
+        let currentBeatUnit = 4;
+        let timeSigIdx = 0;
+
+        // tick=0 の拍子記号を先に適用
+        if (timeSigEvents.length > 0 && timeSigEvents[0]._abs === 0) {
+            currentBeatsPerMeasure = timeSigEvents[0].numerator || 4;
+            currentBeatUnit = timeSigEvents[0].denominator || 4;
+            timeSigIdx = 1;
+        }
+
+        while (currentTick < maxTick) {
+            // 現在の小節開始 tick に一致する拍子変更を適用
+            while (timeSigIdx < timeSigEvents.length && timeSigEvents[timeSigIdx]._abs <= currentTick) {
+                currentBeatsPerMeasure = timeSigEvents[timeSigIdx].numerator || 4;
+                currentBeatUnit = timeSigEvents[timeSigIdx].denominator || 4;
+                timeSigIdx++;
+            }
+
+            const currentTicksPerMeasure = PPQ * (currentBeatsPerMeasure * 4 / currentBeatUnit);
+            const mode = getModeForMeasure(measureIndex);
+
             measureTickMap.push({
-                measureIndex: m,
-                startTick: m * ticksPerMeasure,
-                endTick: (m + 1) * ticksPerMeasure,
-                mode: mode
+                measureIndex,
+                startTick: currentTick,
+                endTick: currentTick + currentTicksPerMeasure,
+                mode
             });
+
+            currentTick += currentTicksPerMeasure;
+            measureIndex++;
         }
     }
 
@@ -213,29 +232,29 @@ export async function processMidiData(file, defaultShuffleType, sections = []) {
                 const tripletSixteenthDuration = Math.round(PPQ / 6);
 
                 if (duration >= tripletSixteenthDuration) {
-                    if (relTick <= tolerance) return beat * RES;
+                    if (relTick <= tolerance) return { tick: beat * RES, zone: 'BEAT' };
 
                     const half = RES / 2;
-                    if (Math.abs(relTick - half) <= tolerance * 2) return beat * RES + half;
+                    if (Math.abs(relTick - half) <= tolerance * 2) return { tick: beat * RES + half, zone: 'HALF(tol)' };
 
                     const zone1End = RES / 4;
                     const zone2End = RES * 3 / 4;
 
-                    if (relTick < zone1End) return beat * RES;
-                    else if (relTick < zone2End) return beat * RES + RES / 2;
-                    else return (beat + 1) * RES;
+                    if (relTick < zone1End) return { tick: beat * RES, zone: 'BEAT(z1)' };
+                    else if (relTick < zone2End) return { tick: beat * RES + RES / 2, zone: 'HALF(z2)' };
+                    else return { tick: (beat + 1) * RES, zone: 'NEXT(z3)' };
                 }
 
-                if (relTick >= RES - tolerance) return (beat + 1) * RES;
-                if (relTick <= tolerance) return beat * RES;
+                if (relTick >= RES - tolerance) return { tick: (beat + 1) * RES, zone: 'NEXT(edge)' };
+                if (relTick <= tolerance) return { tick: beat * RES, zone: 'BEAT(edge)' };
 
                 const zone1End = RES / 4;
                 const zone2End = RES * 3 / 4;
-                if (relTick >= zone1End && relTick < zone2End) return beat * RES + RES / 2;
+                if (relTick >= zone1End && relTick < zone2End) return { tick: beat * RES + RES / 2, zone: 'HALF(short)' };
 
                 const subGrid = RES / 4;
                 const snappedRelTick = Math.round(relTick / subGrid) * subGrid;
-                return beat * RES + snappedRelTick;
+                return { tick: beat * RES + snappedRelTick, zone: `SUB(${snappedRelTick})` };
             }
 
             const beats = {};
@@ -254,17 +273,25 @@ export async function processMidiData(file, defaultShuffleType, sections = []) {
                     .some(tick => Math.abs(note.ticks - tick) <= tolerance);
 
                 const relTick = note.ticks % RES;
+                const ratio = (relTick / RES).toFixed(3);
+                const zone1End = RES / 4;
+                const zone2End = RES * 3 / 4;
+                const zoneLabel = relTick <= tolerance ? 'BEAT'
+                    : relTick >= RES - tolerance ? 'NEXT'
+                    : relTick < zone1End ? 'z1(→BEAT)'
+                    : relTick < zone2End ? 'z2(→HALF)'
+                    : 'z3(→NEXT)';
                 console.log(
-                    `[M${parseInt(mIdx)+1} beat${beatIndex}] tick=${note.ticks} relTick=${relTick} ` +
-                    `(RES=${RES} tolerance=${tolerance.toFixed(1)}) dur=${note.durationTicks} ` +
-                    `protected=${protectedBeats.has(beatIndex)} nearTempo=${isNearTempoChange} mode=${mode}`
+                    `[M${parseInt(mIdx)+1} beat${beatIndex}] tick=${note.ticks} relTick=${relTick}(${ratio}) zone=${zoneLabel} ` +
+                    `(RES=${RES} z1<${zone1End} z2<${zone2End} tol=${tolerance.toFixed(1)}) ` +
+                    `dur=${note.durationTicks} protected=${protectedBeats.has(beatIndex)} nearTempo=${isNearTempoChange} mode=${mode}`
                 );
 
                 if (protectedBeats.has(beatIndex) || isNearTempoChange) {
                     return;
                 }
 
-                const newStartTick = quantizeTick(note.ticks, note.durationTicks);
+                const { tick: newStartTick, zone } = quantizeTick(note.ticks, note.durationTicks);
 
                 let newEndTick;
                 const eighthNoteDuration = PPQ / 2;
@@ -294,7 +321,7 @@ export async function processMidiData(file, defaultShuffleType, sections = []) {
                 }
 
                 console.log(
-                    `  → startTick: ${note.ticks} → ${newStartTick}  dur: ${note.durationTicks} → ${newEndTick - newStartTick}`
+                    `  → [${zone}] startTick: ${note.ticks} → ${newStartTick}  dur: ${note.durationTicks} → ${newEndTick - newStartTick}`
                 );
 
                 note.ticks = newStartTick;
