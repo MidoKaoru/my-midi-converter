@@ -59,7 +59,8 @@ export async function processMidiData(file, defaultShuffleType, sections = []) {
                     note.durationTicks > ornamentThreshold
                 );
 
-                if (substantialNotes.length >= 5) {
+                const uniqueSubstantialTicks = new Set(substantialNotes.map(n => n.ticks));
+                if (uniqueSubstantialTicks.size >= 5) {
                     notes.forEach(note => {
                         const beatIndex = Math.floor(note.ticks / RES);
                         protectedBeats.add(beatIndex);
@@ -83,9 +84,9 @@ export async function processMidiData(file, defaultShuffleType, sections = []) {
 
         } else {
             const tupletPatterns = {
-                triplet: [0, 1, 2].map(i => Math.round(RES * i / 3)),
+                triplet:    [0, 1, 2].map(i => Math.round(RES * i / 3)),
                 quintuplet: [0, 1, 2, 3, 4].map(i => Math.round(RES * i / 5)),
-                septuplet: [0, 1, 2, 3, 4, 5, 6].map(i => Math.round(RES * i / 7))
+                septuplet:  [0, 1, 2, 3, 4, 5, 6].map(i => Math.round(RES * i / 7))
             };
 
             for (const beatIndex in beats) {
@@ -115,7 +116,6 @@ export async function processMidiData(file, defaultShuffleType, sections = []) {
                         const isGridPos = (Math.abs(patternPos) <= tolerance) ||
                                          (Math.abs(patternPos - RES / 2) <= tolerance) ||
                                          (Math.abs(patternPos - RES) <= tolerance);
-
                         if (isGridPos) continue;
 
                         if (positions.some(pos => Math.abs(pos - patternPos) <= tolerance)) {
@@ -125,8 +125,8 @@ export async function processMidiData(file, defaultShuffleType, sections = []) {
 
                     const nonGridPatternPositions = pattern.filter(p => {
                         return !(Math.abs(p) <= tolerance ||
-                                Math.abs(p - RES / 2) <= tolerance ||
-                                Math.abs(p - RES) <= tolerance);
+                                 Math.abs(p - RES / 2) <= tolerance ||
+                                 Math.abs(p - RES) <= tolerance);
                     });
 
                     const requiredMatches = Math.ceil(nonGridPatternPositions.length * 0.8);
@@ -218,16 +218,20 @@ export async function processMidiData(file, defaultShuffleType, sections = []) {
                     const half = RES / 2;
                     if (Math.abs(relTick - half) <= tolerance * 2) return beat * RES + half;
 
-                    const zone1End = RES / 3;
-                    const zone2End = RES * 2 / 3;
+                    const zone1End = RES / 4;
+                    const zone2End = RES * 3 / 4;
 
                     if (relTick < zone1End) return beat * RES;
                     else if (relTick < zone2End) return beat * RES + RES / 2;
-                    else return beat * RES + RES / 2;
+                    else return (beat + 1) * RES;
                 }
 
                 if (relTick >= RES - tolerance) return (beat + 1) * RES;
                 if (relTick <= tolerance) return beat * RES;
+
+                const zone1End = RES / 4;
+                const zone2End = RES * 3 / 4;
+                if (relTick >= zone1End && relTick < zone2End) return beat * RES + RES / 2;
 
                 const subGrid = RES / 4;
                 const snappedRelTick = Math.round(relTick / subGrid) * subGrid;
@@ -248,6 +252,13 @@ export async function processMidiData(file, defaultShuffleType, sections = []) {
                 const isNearTempoChange = tempoChangeTicks
                     .filter(t => t > 0)
                     .some(tick => Math.abs(note.ticks - tick) <= tolerance);
+
+                const relTick = note.ticks % RES;
+                console.log(
+                    `[M${parseInt(mIdx)+1} beat${beatIndex}] tick=${note.ticks} relTick=${relTick} ` +
+                    `(RES=${RES} tolerance=${tolerance.toFixed(1)}) dur=${note.durationTicks} ` +
+                    `protected=${protectedBeats.has(beatIndex)} nearTempo=${isNearTempoChange} mode=${mode}`
+                );
 
                 if (protectedBeats.has(beatIndex) || isNearTempoChange) {
                     return;
@@ -271,8 +282,8 @@ export async function processMidiData(file, defaultShuffleType, sections = []) {
                         newEndTick = newStartTick + adjustedDur;
                     }
                 } else {
-                    // 16分音符（120 ticks）を基本単位として最も近い倍数に丸める
                     if (note.durationTicks >= tripletSixteenthDuration) {
+                        // 16分音符を基本単位として最も近い倍数に丸める
                         const multiplier = Math.max(1, Math.round(note.durationTicks / sixteenthNoteDuration));
                         newEndTick = newStartTick + multiplier * sixteenthNoteDuration;
                     } else {
@@ -281,6 +292,10 @@ export async function processMidiData(file, defaultShuffleType, sections = []) {
                         newEndTick = newStartTick + adjustedDur;
                     }
                 }
+
+                console.log(
+                    `  → startTick: ${note.ticks} → ${newStartTick}  dur: ${note.durationTicks} → ${newEndTick - newStartTick}`
+                );
 
                 note.ticks = newStartTick;
                 note.durationTicks = newEndTick - newStartTick;
