@@ -210,8 +210,6 @@ export async function processMidiData(file, defaultShuffleType, sections = []) {
                 const mIdx = measure.measureIndex;
                 if (!measureGroups[mIdx]) measureGroups[mIdx] = [];
                 measureGroups[mIdx].push(note);
-            } else {
-                console.warn(`Note at tick ${note.ticks} has no measure assigned.`);
             }
         });
 
@@ -272,21 +270,6 @@ export async function processMidiData(file, defaultShuffleType, sections = []) {
                     .filter(t => t > 0)
                     .some(tick => Math.abs(note.ticks - tick) <= tolerance);
 
-                const relTick = note.ticks % RES;
-                const ratio = (relTick / RES).toFixed(3);
-                const zone1End = RES / 4;
-                const zone2End = RES * 3 / 4;
-                const zoneLabel = relTick <= tolerance ? 'BEAT'
-                    : relTick >= RES - tolerance ? 'NEXT'
-                    : relTick < zone1End ? 'z1(→BEAT)'
-                    : relTick < zone2End ? 'z2(→HALF)'
-                    : 'z3(→NEXT)';
-                console.log(
-                    `[M${parseInt(mIdx)+1} beat${beatIndex}] tick=${note.ticks} relTick=${relTick}(${ratio}) zone=${zoneLabel} ` +
-                    `(RES=${RES} z1<${zone1End} z2<${zone2End} tol=${tolerance.toFixed(1)}) ` +
-                    `dur=${note.durationTicks} protected=${protectedBeats.has(beatIndex)} nearTempo=${isNearTempoChange} mode=${mode}`
-                );
-
                 if (protectedBeats.has(beatIndex) || isNearTempoChange) {
                     return;
                 }
@@ -319,10 +302,6 @@ export async function processMidiData(file, defaultShuffleType, sections = []) {
                         newEndTick = newStartTick + adjustedDur;
                     }
                 }
-
-                console.log(
-                    `  → [${zone}] startTick: ${note.ticks} → ${newStartTick}  dur: ${note.durationTicks} → ${newEndTick - newStartTick}`
-                );
 
                 note.ticks = newStartTick;
                 note.durationTicks = newEndTick - newStartTick;
